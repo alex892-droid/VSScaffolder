@@ -15,8 +15,8 @@ namespace ScaffolderMenu
 {
     internal sealed class ScaffolderMenu
     {
+        public static ScaffolderMenu Instance { get; private set; }
         public static readonly Guid CommandSet = new Guid("3c0a1bd0-fce7-48f7-8f22-05fbc20c49d3");
-
         private readonly AsyncPackage package;
         private DTE2 _dte;
 
@@ -25,12 +25,9 @@ namespace ScaffolderMenu
             this.package = package ?? throw new ArgumentNullException(nameof(package));
             commandService = commandService ?? throw new ArgumentNullException(nameof(commandService));
 
-            var menuCommandID = new CommandID(CommandSet, 1);
-            var menuItem = new OleMenuCommand(this.Execute, menuCommandID);
+            var menuItem = new OleMenuCommand(this.Execute, new CommandID(CommandSet, 1));
             commandService.AddCommand(menuItem);
         }
-
-        public static ScaffolderMenu Instance { get; private set; }
 
         public static async Task InitializeAsync(AsyncPackage package)
         {
@@ -56,31 +53,40 @@ namespace ScaffolderMenu
             {
                 string solutionFolder = Path.GetDirectoryName(_dte.Solution.FullName);
                 string scaffoldingFolderPath = Path.Combine(solutionFolder, "Scaffolding");
-                string scaffoldingFilePath = Path.Combine(scaffoldingFolderPath, "TemplateFile.txt");
 
-                if (!File.Exists(scaffoldingFilePath))
+                if (!Directory.Exists(scaffoldingFolderPath))
                 {
-                    ShowMessage("Scaffolding file not found:\n" + scaffoldingFilePath);
+                    ShowMessage("Scaffolding folder not found:\n" + scaffoldingFolderPath);
                     return;
                 }
 
-                string destFilePath = Path.Combine(selectedFolderPath, Path.GetFileName(scaffoldingFilePath));
+                string[] files = Directory.GetFiles(scaffoldingFolderPath, "*.*", SearchOption.TopDirectoryOnly);
 
-                if (File.Exists(destFilePath))
+                if (files.Length == 0)
                 {
-                    ShowMessage($"File already exists:\n{destFilePath}");
+                    ShowMessage("No files found in Scaffolding folder.");
                     return;
                 }
 
-                File.Copy(scaffoldingFilePath, destFilePath);
+                int copiedCount = 0;
+                foreach (var file in files)
+                {
+                    string destFilePath = Path.Combine(selectedFolderPath, Path.GetFileName(file));
+                    if (!File.Exists(destFilePath))
+                    {
+                        File.Copy(file, destFilePath);
+                        copiedCount++;
+                    }
+                }
 
-                ShowMessage($"File copied to:\n{destFilePath}");
+                ShowMessage($"Copied {copiedCount} file(s) to:\n{selectedFolderPath}");
             }
             catch (Exception ex)
             {
                 ShowMessage($"Error:\n{ex.Message}", OLEMSGICON.OLEMSGICON_CRITICAL);
             }
         }
+
 
         private void ShowMessage(string message, OLEMSGICON icon = OLEMSGICON.OLEMSGICON_INFO)
         {
@@ -92,8 +98,6 @@ namespace ScaffolderMenu
                 OLEMSGBUTTON.OLEMSGBUTTON_OK,
                 OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
-
-
 
         private string GetSelectedFolderPath()
         {
@@ -153,56 +157,5 @@ namespace ScaffolderMenu
 
             return null;
         }
-
-        private string FindFileInSolution(string folderName, string fileName)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            foreach (Project project in _dte.Solution.Projects)
-            {
-                string foundPath = FindFileInProject(project, folderName, fileName);
-                if (foundPath != null)
-                    return foundPath;
-            }
-
-            return null;
-        }
-
-        private string FindFileInProject(Project project, string folderName, string fileName)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (project == null)
-                return null;
-
-            return FindFileInProjectItems(project.ProjectItems, folderName, fileName);
-        }
-
-        private string FindFileInProjectItems(ProjectItems items, string folderName, string fileName)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            foreach (ProjectItem item in items)
-            {
-                string itemPath = GetProjectItemFullPath(item);
-                if (itemPath == null)
-                    continue;
-
-                if (Directory.Exists(itemPath) && Path.GetFileName(itemPath).Equals(folderName, StringComparison.OrdinalIgnoreCase))
-                {
-                    string targetFilePath = Path.Combine(itemPath, fileName);
-                    if (File.Exists(targetFilePath))
-                        return targetFilePath;
-                }
-
-                // Recursive check inside child items
-                string found = FindFileInProjectItems(item.ProjectItems, folderName, fileName);
-                if (found != null)
-                    return found;
-            }
-
-            return null;
-        }
-
     }
 }
